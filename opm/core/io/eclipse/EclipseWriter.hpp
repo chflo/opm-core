@@ -113,6 +113,10 @@ private:
 
     void init(const parameter::ParameterGroup& params);
 };
+
+typedef std::shared_ptr<EclipseWriter> EclipseWriterPtr;
+typedef std::shared_ptr<const EclipseWriter> EclipseWriterConstPtr;
+
 } // namespace Opm
 
 
