@@ -338,6 +338,7 @@ public:
 
 
     void getRestartFileIwelData(std::vector<int>& iwel_data, size_t currentStep, WellConstPtr well_ptr) const {
+      iwel_data.reserve(iwel_data.size() + Opm::EclipseWriterDetails::Restart::NIWELZ);
 
       iwel_data.push_back(well_ptr->getHeadI() + 1); // item 1 - gridhead I value
       iwel_data.push_back(well_ptr->getHeadJ() + 1); // item 2 - gridhead J value
@@ -349,22 +350,20 @@ public:
       iwel_data.push_back(num_completions);      // item 5 - number of completions
       iwel_data.push_back(1);                    // item 6 - for now, set all group indexes to 1
 
-
-      if (well_ptr->isProducer(currentStep)) {
+      if (well_ptr->isProducer(currentStep)) {   // item 7 - welltype
         iwel_data.push_back(IWEL_PRODUCER);
       } else {
         iwel_data.push_back(ertInjectorTypeMask(well_ptr->getInjectionProperties(currentStep).injectorType));
       }
 
-      iwel_data.push_back(0);                    // item 8  -  undefined  - 0
-      iwel_data.push_back(0);                    // item 9  -  undefined  - 0
-      iwel_data.push_back(0);                    // item 10 -  undefined  - 0
-
+      iwel_data.insert(iwel_data.end(), 3, 0); //items 8,9,10 - undefined - 0
       iwel_data.push_back(ertWellStatusMask(well_ptr->getStatus(currentStep))); // item 11 - well status
     }
 
 
     void getRestartFileZwelData(std::vector<const char*>& zwel_data, size_t currentstep, WellConstPtr well_ptr) const {
+      zwel_data.reserve(zwel_data.size() + Opm::EclipseWriterDetails::Restart::NZWELZ);
+
       zwel_data.push_back(well_ptr->name().c_str());
       zwel_data.push_back("");
       zwel_data.push_back("");
@@ -372,6 +371,8 @@ public:
 
 
     void getRestartFileIconData(std::vector<int>& icon_data, size_t currentstep, int ncwmax, WellConstPtr well_ptr) const {
+      icon_data.reserve(icon_data.size() + Opm::EclipseWriterDetails::Restart::NICONZ * ncwmax);
+
       CompletionSetConstPtr completions_set_ptr = well_ptr->getCompletions(currentstep);
 
       int zero_pad = ncwmax - completions_set_ptr->size();
@@ -391,24 +392,14 @@ public:
           icon_data.push_back(0);
         }
 
-        icon_data.push_back(0);
-        icon_data.push_back(0);
-        icon_data.push_back(0);
-        icon_data.push_back(0);
-        icon_data.push_back(0);
-        icon_data.push_back(0);
-        icon_data.push_back(0);
-
+        icon_data.insert(icon_data.end(), 7, 0);
         icon_data.push_back((int)completion_ptr->getDirection());
-
       }
 
       for(int i=0;i<zero_pad;i++){
         icon_data.insert(icon_data.end(), Restart::NICONZ, 0);
       }
-
     }
-
 
 
     ~Restart()
