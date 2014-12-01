@@ -339,10 +339,10 @@ public:
 
     void getRestartFileIwelData(std::vector<int>& iwel_data, size_t currentStep, WellConstPtr well_ptr) const {
 
-      iwel_data.push_back(well_ptr->getHeadI()); // item 1 - gridhead I value
-      iwel_data.push_back(well_ptr->getHeadJ()); // item 2 - gridhead J value
-      iwel_data.push_back(0);                    // item 3 - gridhead K value
-      iwel_data.push_back(0);                    // item 4 - undefined - 0
+      iwel_data.push_back(well_ptr->getHeadI() + 1); // item 1 - gridhead I value
+      iwel_data.push_back(well_ptr->getHeadJ() + 1); // item 2 - gridhead J value
+      iwel_data.push_back(0);                        // item 3 - gridhead K value
+      iwel_data.push_back(0);                        // item 4 - undefined - 0
 
       CompletionSetConstPtr completions_ptr = well_ptr->getCompletions(currentStep);
       int num_completions = completions_ptr->size();
