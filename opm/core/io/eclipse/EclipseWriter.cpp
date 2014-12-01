@@ -23,12 +23,9 @@
 #include "EclipseWriter.hpp"
 
 #include <opm/core/props/BlackoilPhases.hpp>
-#include <opm/parser/eclipse/EclipseState/Grid/EclipseGrid.hpp>
-#include <opm/parser/eclipse/EclipseState/Schedule/Well.hpp>
-#include <opm/parser/eclipse/EclipseState/Schedule/Schedule.hpp>
+#include <opm/core/props/phaseUsageFromDeck.hpp>
 #include <opm/core/grid.h>
 #include <opm/core/grid/cpgpreprocess/preprocess.h>
-#include <opm/core/props/phaseUsageFromDeck.hpp>
 #include <opm/core/simulator/SimulatorState.hpp>
 #include <opm/core/simulator/SimulatorTimer.hpp>
 #include <opm/core/simulator/WellState.hpp>
@@ -41,6 +38,9 @@
 #include <opm/parser/eclipse/Deck/DeckKeyword.hpp>
 #include <opm/parser/eclipse/Utility/SpecgridWrapper.hpp>
 #include <opm/parser/eclipse/Utility/WelspecsWrapper.hpp>
+#include <opm/parser/eclipse/EclipseState/Schedule/Schedule.hpp>
+#include <opm/parser/eclipse/EclipseState/Schedule/Well.hpp>
+#include <opm/parser/eclipse/EclipseState/Grid/EclipseGrid.hpp>
 
 #include <boost/algorithm/string/case_conv.hpp> // to_upper_copy
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -61,6 +61,7 @@
 #include <ert/ecl/ecl_init_file.h>
 #include <ert/ecl/ecl_file.h>
 #include <ert/ecl/ecl_rst_file.h>
+#include <ert/ecl_well/well_const.h>
 
 // namespace start here since we don't want the ERT headers in it
 namespace Opm {
@@ -138,31 +139,42 @@ void extractFromStripedData(std::vector<double> &data,
 }
 
 /// Convert OPM phase usage to ERT bitmask
-static int ertPhaseMask(const PhaseUsage uses)
+int ertPhaseMask(const PhaseUsage uses)
 {
     return (uses.phase_used[BlackoilPhases::Liquid] ? ECL_OIL_PHASE : 0)
         | (uses.phase_used[BlackoilPhases::Aqua] ? ECL_WATER_PHASE : 0)
         | (uses.phase_used[BlackoilPhases::Vapour] ? ECL_GAS_PHASE : 0);
 }
 
-//Convert OPM injector type enum to ERT injector type
-static int ertInjectorTypeMask(int injectorType) {
-  int ert_injector_type = 0;
+
+// Convert OPM injector type enum to ERT injector type
+int ertInjectorTypeMask(WellInjector::TypeEnum injectorType)
+{
+  int ert_injector_type = IWEL_UNDOCUMENTED_ZERO;
 
   switch (injectorType) {
-    case 1 :  // WATER injection
-      ert_injector_type = 3;
+    case WellInjector::WATER:
+      ert_injector_type = IWEL_WATER_INJECTOR;
       break;
-    case 2 :  // GAS injection
-      ert_injector_type = 4;
+    case WellInjector::GAS:
+      ert_injector_type = IWEL_GAS_INJECTOR;
       break;
-    case 3 : // OIL injection
-      ert_injector_type = 2;
+    case WellInjector::OIL :
+      ert_injector_type = IWEL_OIL_INJECTOR;
   }
 
   return ert_injector_type;
- }
+}
 
+int ertWellStatusMask(WellCommon::StatusEnum wellStatus)
+{
+  //ERT: > 0 open, <= 0 shut
+  int well_status = 1;
+
+  if (wellStatus == WellCommon::SHUT) {
+    well_status = 0;
+  }
+}
 
 
 
@@ -339,20 +351,16 @@ public:
 
 
       if (well_ptr->isProducer(currentStep)) {
-        iwel_data.push_back(1);
+        iwel_data.push_back(IWEL_PRODUCER);
       } else {
-          iwel_data.push_back(ertInjectorTypeMask(well_ptr->getInjectionProperties(currentStep).injectorType));
+        iwel_data.push_back(ertInjectorTypeMask(well_ptr->getInjectionProperties(currentStep).injectorType));
       }
 
       iwel_data.push_back(0);                    // item 8  -  undefined  - 0
       iwel_data.push_back(0);                    // item 9  -  undefined  - 0
       iwel_data.push_back(0);                    // item 10 -  undefined  - 0
 
-      if (well_ptr->getStatus(currentStep)== WellCommon::StatusEnum::SHUT) {
-        iwel_data.push_back(0);
-      } else { // OPEN = 1, STOP = 2, AUTO = 4
-        iwel_data.push_back(1);//OPEN
-      }
+      iwel_data.push_back(ertWellStatusMask(well_ptr->getStatus(currentStep))); // item 11 - well status
     }
 
 
