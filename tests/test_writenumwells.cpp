@@ -35,78 +35,62 @@
 
 #include <opm/parser/eclipse/Parser/Parser.hpp>
 #include <opm/parser/eclipse/Deck/Deck.hpp>
+#include <opm/parser/eclipse/EclipseState/Schedule/Schedule.hpp>
+#include <opm/parser/eclipse/EclipseState/Schedule/Well.hpp>
 #include <opm/parser/eclipse/EclipseState/Grid/EclipseGrid.hpp>
 
 // ERT stuff
 #include <ert/ecl/ecl_kw.h>
 #include <ert/ecl/ecl_file.h>
 #include <ert/ecl/ecl_kw_magic.h>
+#include <ert/ecl_well/well_info.h>
+#include <ert/ecl_well/well_state.h>
 #include <ert/util/test_work_area.h>
 
 #include <string.h>
 
 
-void verifyNumWells(const std::string&  filename, int timestep, int numWellsFromSchedule){
-  ecl_file_type * restart_file = ecl_file_open(filename.c_str(), 0);
-  ecl_file_load_all(restart_file);
+void verifyWellState(const std::string& rst_filename,
+                     Opm::EclipseGridConstPtr ecl_grid,
+                     Opm::ScheduleConstPtr schedule) {
 
-  const ecl_kw_type * intehead_kw = ecl_file_iget_named_kw(restart_file, INTEHEAD_KW, timestep);
-  int numwells = ecl_kw_iget_int(intehead_kw, INTEHEAD_NWELLS_INDEX);
-  BOOST_ASSERT(numWellsFromSchedule == numwells);
+  well_info_type * well_info = well_info_alloc(ecl_grid->c_ptr());
+  well_info_load_rstfile(well_info, rst_filename.c_str(), false);
 
-  ecl_file_close(restart_file);
+  int numwells = well_info_get_num_wells(well_info);
+  BOOST_CHECK(numwells == (int)schedule->numWells());
+
+  std::vector<Opm::WellConstPtr> wells = schedule->getWells();
+
+  for (int i = 0; i < numwells; ++i) {
+
+    //Verify wellnames
+    const char * wellname = well_info_iget_well_name(well_info, i);
+    Opm::WellConstPtr well = wells.at(i);
+    BOOST_CHECK(wellname == well->name());
+
+    // Verify well-head position data
+    well_ts_type * well_ts = well_info_get_ts(well_info , wellname);
+    well_state_type * well_state = well_ts_iget_state(well_ts, 0);
+    const well_conn_type * well_head = well_state_get_wellhead(well_state, ECL_GRID_GLOBAL_GRID);
+    BOOST_CHECK(well_conn_get_i(well_head) == well->getHeadI());
+    BOOST_CHECK(well_conn_get_j(well_head) == well->getHeadJ());
+
+    //Verify number of completion connections
+    for (int i = 0; i < well_ts_get_size(well_ts); ++i) {
+      well_state_type * well_state = well_ts_iget_state(well_ts, i);
+      const well_conn_collection_type * well_connections = well_state_get_global_connections( well_state );
+      int num_wellconnections = well_conn_collection_get_size(well_connections);
+
+      int report_nr = well_state_get_report_nr(well_state);
+      Opm::CompletionSetConstPtr completions_set = well->getCompletions((size_t)report_nr);
+
+      BOOST_CHECK(num_wellconnections == completions_set->size());
+    }
+  }
+
+  well_info_free(well_info);
 }
-
-
-void verifyIwelData(const std::string& filename, int timestep) {
-  ecl_file_type * restart_file = ecl_file_open(filename.c_str(), 0);
-  ecl_file_load_all(restart_file);
-
-  const ecl_kw_type * intehead_kw = ecl_file_iget_named_kw(restart_file, INTEHEAD_KW, timestep);
-  int numwells = ecl_kw_iget_int(intehead_kw, INTEHEAD_NWELLS_INDEX);
-  int NIWELZ = ecl_kw_iget_int(intehead_kw, INTEHEAD_NIWELZ_INDEX);
-  int expected_IWEL_data_size = numwells * NIWELZ;
-
-  const ecl_kw_type * iwel_kw = ecl_file_iget_named_kw(restart_file, IWEL_KW, timestep);
-  BOOST_ASSERT(expected_IWEL_data_size == ecl_kw_get_size(iwel_kw));
-
-  ecl_file_close(restart_file);
-}
-
-
-void verifyZwelData(const std::string&  filename, int timestep) {
-  ecl_file_type * restart_file = ecl_file_open(filename.c_str(), 0);
-  ecl_file_load_all(restart_file);
-
-  const ecl_kw_type * intehead_kw = ecl_file_iget_named_kw(restart_file, INTEHEAD_KW, timestep);
-  int numwells = ecl_kw_iget_int(intehead_kw, INTEHEAD_NWELLS_INDEX);
-  int NZWELZ = ecl_kw_iget_int(intehead_kw, INTEHEAD_NZWELZ_INDEX);
-  int expected_ZWEL_data_size = numwells * NZWELZ;
-
-  const ecl_kw_type * zwel_kw = ecl_file_iget_named_kw(restart_file, ZWEL_KW, timestep);
-  BOOST_ASSERT(expected_ZWEL_data_size == ecl_kw_get_size(zwel_kw));
-
-  ecl_file_close(restart_file);
-}
-
-
-void  verifyIconData(const std::string&  filename, int timestep) {
-  ecl_file_type * restart_file = ecl_file_open(filename.c_str(), 0);
-  ecl_file_load_all(restart_file);
-
-  const ecl_kw_type * intehead_kw = ecl_file_iget_named_kw(restart_file, INTEHEAD_KW, timestep);
-  int numwells = ecl_kw_iget_int(intehead_kw, INTEHEAD_NWELLS_INDEX); //Num wells
-  int NICONZ   = ecl_kw_iget_int(intehead_kw, INTEHEAD_NICONZ_INDEX); //Num elements per connection element
-  int NCWMAX   = ecl_kw_iget_int(intehead_kw, INTEHEAD_NCWMAX_INDEX); //Max number of connections for a well
-
-  int expected_ICON_data_size = NICONZ * NCWMAX * numwells;
-
-  const ecl_kw_type * icon_kw = ecl_file_iget_named_kw(restart_file, ICON_KW, timestep);
-  BOOST_ASSERT(expected_ICON_data_size == ecl_kw_get_size(icon_kw));
-
-  ecl_file_close(restart_file);
-}
-
 
 
 std::shared_ptr<Opm::BlackoilState> createBlackOilState(Opm::EclipseGridConstPtr eclGrid) {
@@ -174,13 +158,7 @@ BOOST_AUTO_TEST_CASE(EclipseWriteRestartWellInfo)
       eclipseWriter->writeTimeStep(*simTimer, *blackoilState, *wellState);
     }
 
-    for (int timestep = 0; timestep <= countTimeStep; ++timestep) {
-      int numWellsFromSchedule  = eclipseState->getSchedule()->numWells(timestep);
-      verifyNumWells(eclipse_restart_filename, timestep, numWellsFromSchedule);
-      verifyIwelData(eclipse_restart_filename, timestep);
-      verifyZwelData(eclipse_restart_filename, timestep);
-      verifyIconData(eclipse_restart_filename, timestep);
-    }
+    verifyWellState(eclipse_restart_filename, eclipseState->getEclipseGrid(), eclipseState->getSchedule());
 
     test_work_area_free(test_area);
 }
