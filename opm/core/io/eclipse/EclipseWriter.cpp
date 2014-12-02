@@ -410,16 +410,12 @@ public:
 
     void writeHeader(const SimulatorTimer& timer,
                      int reportStepIdx,
-                     intehead_data data)
+                     ecl_rsthead_type * rsthead_data)
     {
-
-      int days = Opm::unit::convert::to(timer.simulationTimeElapsed(), Opm::unit::day);
-
 
       ecl_rst_file_fwrite_header(restartFileHandle_,
                                  reportStepIdx,
-                                 Opm::unit::convert::to(timer.simulationTimeElapsed(), Opm::unit::day),
-                                 data);
+                                 rsthead_data);
 
     }
 
@@ -1070,38 +1066,41 @@ void EclipseWriter::writeTimeStep(const SimulatorTimer& timer,
     std::vector<const char*> zwell_data;
     std::vector<int>         icon_data;
 
-    intehead_data ih_data;
-    ih_data.date     = timer.currentPosixTime();
-    ih_data.nactive  = numCells_;
-    ih_data.nx       = cartesianSize_[0];
-    ih_data.ny       = cartesianSize_[1];
-    ih_data.nz       = cartesianSize_[2];
-    ih_data.numwells = eclipseState_->getSchedule()->numWells(timer.currentStepNum());
-    ih_data.niwelz   = 0;
-    ih_data.nzwelz   = 0;
-    ih_data.niconz   = 0;
-    ih_data.ncwmax   = 0;
-    ih_data.phases   = Opm::EclipseWriterDetails::ertPhaseMask(phaseUsage_);
+    ecl_rsthead_type * rsthead_data = ecl_rsthead_alloc_empty();
+    rsthead_data->sim_time   = timer.currentPosixTime();
+    rsthead_data->nactive    = numCells_;
+    rsthead_data->nx         = cartesianSize_[0];
+    rsthead_data->ny         = cartesianSize_[1];
+    rsthead_data->nz         = cartesianSize_[2];
+    rsthead_data->nwells     = eclipseState_->getSchedule()->numWells(timer.currentStepNum());
+    rsthead_data->niwelz     = 0;
+    rsthead_data->nzwelz     = 0;
+    rsthead_data->niconz     = 0;
+    rsthead_data->ncwmax     = 0;
+    rsthead_data->phase_sum  = Opm::EclipseWriterDetails::ertPhaseMask(phaseUsage_);
 
     EclipseWriterDetails::Restart restartHandle(outputDir_, baseName_, reportStepIdx_);
 
     for (std::vector<WellConstPtr>::const_iterator c_iter = wells_ptr.begin(); c_iter != wells_ptr.end(); ++c_iter) {
       WellConstPtr well_ptr = *c_iter;
 
-      ih_data.ncwmax = eclipseState_->getSchedule()->getMaxNumCompletionsForWells(timer.currentStepNum());
+      rsthead_data->ncwmax = eclipseState_->getSchedule()->getMaxNumCompletionsForWells(timer.currentStepNum());
       restartHandle.getRestartFileIwelData(iwell_data, timer.currentStepNum(), well_ptr);
       restartHandle.getRestartFileZwelData(zwell_data, timer.currentStepNum(), well_ptr);
-      restartHandle.getRestartFileIconData(icon_data, timer.currentStepNum(), ih_data.ncwmax, well_ptr);
+      restartHandle.getRestartFileIconData(icon_data, timer.currentStepNum(), rsthead_data->ncwmax, well_ptr);
 
-      ih_data.niwelz = EclipseWriterDetails::Restart::NIWELZ;
-      ih_data.nzwelz = EclipseWriterDetails::Restart::NZWELZ;
-      ih_data.niconz = EclipseWriterDetails::Restart::NICONZ;
+      rsthead_data->niwelz = EclipseWriterDetails::Restart::NIWELZ;
+      rsthead_data->nzwelz = EclipseWriterDetails::Restart::NZWELZ;
+      rsthead_data->niconz = EclipseWriterDetails::Restart::NICONZ;
     }
 
+    rsthead_data->sim_days = Opm::unit::convert::to(timer.simulationTimeElapsed(), Opm::unit::day); //data for doubhead
 
     restartHandle.writeHeader(timer,
                               reportStepIdx_,
-                              ih_data);
+                              rsthead_data);
+
+    ecl_rsthead_free(rsthead_data);
 
     restartHandle.add_kw(EclipseWriterDetails::Keyword<int>(IWEL_KW, iwell_data));
     restartHandle.add_kw(EclipseWriterDetails::Keyword<const char *>(ZWEL_KW, zwell_data));
