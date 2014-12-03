@@ -62,6 +62,7 @@
 #include <ert/ecl/ecl_file.h>
 #include <ert/ecl/ecl_rst_file.h>
 #include <ert/ecl_well/well_const.h>
+#include <ert/ecl/ecl_rsthead.h>
 
 // namespace start here since we don't want the ERT headers in it
 namespace Opm {
