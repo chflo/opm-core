@@ -32,6 +32,7 @@
 #include <opm/core/simulator/WellState.hpp>
 #include <opm/core/simulator/SimulatorTimer.hpp>
 #include <opm/core/utility/parameters/ParameterGroup.hpp>
+#include <opm/core/wells.h>
 
 #include <opm/parser/eclipse/Parser/Parser.hpp>
 #include <opm/parser/eclipse/Deck/Deck.hpp>
@@ -57,6 +58,7 @@ void verifyWellState(const std::string& rst_filename,
   well_info_type * well_info = well_info_alloc(ecl_grid->c_ptr());
   well_info_load_rstfile(well_info, rst_filename.c_str(), false);
 
+  //Verify numwells
   int numwells = well_info_get_num_wells(well_info);
   BOOST_CHECK(numwells == (int)schedule->numWells());
 
@@ -76,16 +78,44 @@ void verifyWellState(const std::string& rst_filename,
     BOOST_CHECK(well_conn_get_i(well_head) == well->getHeadI());
     BOOST_CHECK(well_conn_get_j(well_head) == well->getHeadJ());
 
-    //Verify number of completion connections
-    for (int i = 0; i < well_ts_get_size(well_ts); ++i) {
-      well_state_type * well_state = well_ts_iget_state(well_ts, i);
+    for (int j = 0; j < well_ts_get_size(well_ts); ++j) {
+      well_state_type * well_state = well_ts_iget_state(well_ts, j);
+
+      //Verify welltype
+      int ert_well_type = well_state_get_type(well_state);
+      WellType welltype = well->isProducer(j) ? PRODUCER : INJECTOR;
+      Opm::WellInjector::TypeEnum injectortype = well->getInjectionProperties(j).injectorType;
+      int ecl_converted_welltype = Opm::EclipseWriter::eclipseWellTypeMask(welltype, injectortype);
+      int ert_converted_welltype = well_state_translate_ecl_type_int(ecl_converted_welltype);
+      BOOST_CHECK(ert_well_type == ert_converted_welltype);
+
+      //Verify wellstatus
+      int ert_well_status = well_state_is_open(well_state) ? 1 : 0;
+
+      Opm::WellCommon::StatusEnum status = well->getStatus(j);
+      int wellstatus = Opm::EclipseWriter::eclipseWellStatusMask(status);
+
+      BOOST_CHECK(ert_well_status == wellstatus);
+
+      //Verify number of completion connections
       const well_conn_collection_type * well_connections = well_state_get_global_connections( well_state );
-      int num_wellconnections = well_conn_collection_get_size(well_connections);
+      size_t num_wellconnections = well_conn_collection_get_size(well_connections);
 
       int report_nr = well_state_get_report_nr(well_state);
       Opm::CompletionSetConstPtr completions_set = well->getCompletions((size_t)report_nr);
 
       BOOST_CHECK(num_wellconnections == completions_set->size());
+
+      //Verify coordinates for each completion connection
+      for (size_t k = 0; k < num_wellconnections; ++k) {
+          const well_conn_type * well_connection = well_conn_collection_iget_const(well_connections , k);
+
+          Opm::CompletionConstPtr completion = completions_set->get(k);
+
+          BOOST_CHECK(well_conn_get_i(well_connection) == completion->getI());
+          BOOST_CHECK(well_conn_get_j(well_connection) == completion->getJ());
+          BOOST_CHECK(well_conn_get_k(well_connection) == completion->getK());
+      }
     }
   }
 
