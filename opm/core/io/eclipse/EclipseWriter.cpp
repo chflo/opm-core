@@ -148,35 +148,6 @@ int ertPhaseMask(const PhaseUsage uses)
 }
 
 
-// Convert OPM injector type enum to ERT injector type
-int ertInjectorTypeMask(WellInjector::TypeEnum injectorType)
-{
-  int ert_injector_type = IWEL_UNDOCUMENTED_ZERO;
-
-  switch (injectorType) {
-    case WellInjector::WATER:
-      ert_injector_type = IWEL_WATER_INJECTOR;
-      break;
-    case WellInjector::GAS:
-      ert_injector_type = IWEL_GAS_INJECTOR;
-      break;
-    case WellInjector::OIL :
-      ert_injector_type = IWEL_OIL_INJECTOR;
-  }
-
-  return ert_injector_type;
-}
-
-int ertWellStatusMask(WellCommon::StatusEnum wellStatus)
-{
-  //ERT: > 0 open, <= 0 shut
-  int well_status = 1;
-
-  if (wellStatus == WellCommon::SHUT) {
-    well_status = 0;
-  }
-}
-
 
 
 /**
@@ -341,24 +312,23 @@ public:
     void getRestartFileIwelData(std::vector<int>& iwel_data, size_t currentStep, WellConstPtr well_ptr) const {
       iwel_data.reserve(iwel_data.size() + Opm::EclipseWriterDetails::Restart::NIWELZ);
 
-      iwel_data.push_back(well_ptr->getHeadI() + 1); // item 1 - gridhead I value
-      iwel_data.push_back(well_ptr->getHeadJ() + 1); // item 2 - gridhead J value
-      iwel_data.push_back(0);                        // item 3 - gridhead K value
-      iwel_data.push_back(0);                        // item 4 - undefined - 0
+      int eclipse_offset = 1;
+      iwel_data.push_back(well_ptr->getHeadI() + eclipse_offset); // item 1 - gridhead I value
+      iwel_data.push_back(well_ptr->getHeadJ() + eclipse_offset); // item 2 - gridhead J value
+      iwel_data.push_back(0);                                     // item 3 - gridhead K value
+      iwel_data.push_back(0);                                     // item 4 - undefined - 0
 
       CompletionSetConstPtr completions_ptr = well_ptr->getCompletions(currentStep);
       int num_completions = completions_ptr->size();
       iwel_data.push_back(num_completions);      // item 5 - number of completions
       iwel_data.push_back(1);                    // item 6 - for now, set all group indexes to 1
 
-      if (well_ptr->isProducer(currentStep)) {   // item 7 - welltype
-        iwel_data.push_back(IWEL_PRODUCER);
-      } else {
-        iwel_data.push_back(ertInjectorTypeMask(well_ptr->getInjectionProperties(currentStep).injectorType));
-      }
+      WellType welltype = well_ptr->isProducer(currentStep) ? PRODUCER : INJECTOR;
+      int ert_welltype = EclipseWriter::eclipseWellTypeMask(welltype, well_ptr->getInjectionProperties(currentStep).injectorType);
+      iwel_data.push_back(ert_welltype);  // item 7 - welltype
 
       iwel_data.insert(iwel_data.end(), 3, 0); //items 8,9,10 - undefined - 0
-      iwel_data.push_back(ertWellStatusMask(well_ptr->getStatus(currentStep))); // item 11 - well status
+      iwel_data.push_back(EclipseWriter::eclipseWellStatusMask(well_ptr->getStatus(currentStep))); // item 11 - well status
     }
 
 
@@ -381,9 +351,11 @@ public:
       for (int i = 0; i < completions_set_ptr->size(); ++i) {
         CompletionConstPtr completion_ptr = completions_set_ptr->get(i);
         icon_data.push_back(1);
-        icon_data.push_back(completion_ptr->getI());
-        icon_data.push_back(completion_ptr->getJ());
-        icon_data.push_back(completion_ptr->getK());
+
+        int eclipse_offset = 1;
+        icon_data.push_back(completion_ptr->getI() + eclipse_offset);
+        icon_data.push_back(completion_ptr->getJ() + eclipse_offset)  ;
+        icon_data.push_back(completion_ptr->getK() + eclipse_offset);
         icon_data.push_back(0);
 
         CompletionStateEnum completion_state = completion_ptr->getState();
@@ -999,6 +971,43 @@ void Summary::addAllWells(Opm::EclipseStateConstPtr eclipseState,
     }
 }
 } // end namespace EclipseWriterDetails
+
+
+// Convert OPM WellType and InjectorType to ecl welltype
+int EclipseWriter::eclipseWellTypeMask(WellType wellType, WellInjector::TypeEnum injectorType)
+{
+  int ert_well_type = IWEL_UNDOCUMENTED_ZERO;
+
+  if (PRODUCER == wellType) {
+      ert_well_type = IWEL_PRODUCER;
+  } else if (INJECTOR == wellType) {
+      switch (injectorType) {
+        case WellInjector::WATER:
+          ert_well_type = IWEL_WATER_INJECTOR;
+          break;
+        case WellInjector::GAS:
+          ert_well_type = IWEL_GAS_INJECTOR;
+          break;
+        case WellInjector::OIL :
+          ert_well_type = IWEL_OIL_INJECTOR;
+      }
+  }
+
+  return ert_well_type;
+}
+
+
+//Convert OPM WellStatus to eclipse format: > 0 open, <= 0 shut
+int EclipseWriter::eclipseWellStatusMask(WellCommon::StatusEnum wellStatus)
+{
+  int well_status = 0;
+
+  if (wellStatus == WellCommon::OPEN) {
+    well_status = 1;
+  }
+  return well_status;
+}
+
 
 void EclipseWriter::writeInit(const SimulatorTimer &timer)
 {

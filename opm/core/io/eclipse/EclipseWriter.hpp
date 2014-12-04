@@ -23,6 +23,7 @@
 
 #include <opm/core/io/OutputWriter.hpp>
 #include <opm/core/props/BlackoilPhases.hpp>
+#include <opm/core/wells.h> // WellType
 
 #include <opm/parser/eclipse/EclipseState/EclipseState.hpp>
 
@@ -96,6 +97,9 @@ public:
     virtual void writeTimeStep(const SimulatorTimer& timer,
                                const SimulatorState& reservoirState,
                                const WellState& wellState);
+
+    static int eclipseWellTypeMask(WellType wellType, WellInjector::TypeEnum injectorType);
+    static int eclipseWellStatusMask(WellCommon::StatusEnum wellStatus);
 
 private:
     Opm::EclipseStateConstPtr eclipseState_;
