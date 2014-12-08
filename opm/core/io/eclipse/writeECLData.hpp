@@ -33,14 +33,19 @@ namespace Opm
 {
 
   // ECLIPSE output for general grids.
+
   void writeECLData(const UnstructuredGrid& grid,
                     const DataMap& data,
                     const int current_step,
                     const double current_time,
                     const boost::posix_time::ptime& current_date_time,
+                    const int num_wells,
+                    const int niwelz,
+                    const int nzwelz,
+                    const int niconz,
+                    const int ncwmax,
                     const std::string& output_dir,
                     const std::string& base_name);
-
 }
 
 #endif
