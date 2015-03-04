@@ -32,7 +32,6 @@
 #include <opm/core/simulator/BlackoilState.hpp>
 #include <opm/core/simulator/WellState.hpp>
 #include <opm/core/simulator/SimulatorTimer.hpp>
-#include <opm/core/props/BlackoilPhases.hpp>
 #include <opm/core/props/phaseUsageFromDeck.hpp>
 #include <opm/core/utility/parameters/ParameterGroup.hpp>
 
@@ -42,15 +41,11 @@
 #include <opm/parser/eclipse/EclipseState/Schedule/Well.hpp>
 #include <opm/parser/eclipse/EclipseState/Grid/EclipseGrid.hpp>
 
-#include <ert/ecl/ecl_kw.h>
-#include <ert/ecl/ecl_endian_flip.h>
 #include <ert/ecl/ecl_rft_file.h>
-#include <ert/ecl/fortio.h>
 #include <ert/util/test_work_area.h>
 #include <ert/util/util.h>
 
 #include <vector>
-#include <memory>
 
 
 void verifyRFTFile(const std::string& rft_filename) {
@@ -62,7 +57,7 @@ void verifyRFTFile(const std::string& rft_filename) {
     //Get RFT node for well/time OP_1/10 OKT 2008
     time_t recording_time = util_make_datetime(0, 0, 0, 10, 10, 2008);
     ecl_rft_node_type * ecl_rft_node = ecl_rft_file_get_well_time_rft(rft_file.get() , "OP_1" , recording_time);
-    BOOST_CHECK_EQUAL(ecl_rft_node_is_RFT(ecl_rft_node), true);
+    BOOST_CHECK(ecl_rft_node_is_RFT(ecl_rft_node));
 
     //Verify RFT data for completions (ijk) 9 9 1, 9 9 2 and 9 9 3 for OP_1
     const ecl_rft_cell_type * ecl_rft_cell1 = ecl_rft_node_lookup_ijk(ecl_rft_node, 8, 8, 0);
@@ -118,17 +113,8 @@ std::shared_ptr<Opm::BlackoilState> createBlackoilState(int timeStepIdx, std::sh
     blackoilState->init(ourFinerUnstructuredGrid, 3);
 
     size_t numCells = ourFinerUnstructuredGrid.number_of_cells;
-    size_t numFaces = ourFinerUnstructuredGrid.number_of_faces;
-
-    BOOST_CHECK(blackoilState->pressure().size() == numCells);
-    BOOST_CHECK(blackoilState->facepressure().size() == numFaces);
-    BOOST_CHECK(blackoilState->faceflux().size() == numFaces);
-    BOOST_CHECK(blackoilState->saturation().size() == numCells*3);
-    BOOST_CHECK(blackoilState->gasoilratio().size() == numCells);
-    BOOST_CHECK(blackoilState->rv().size() == numCells);
 
     auto &pressure = blackoilState->pressure();
-    auto &saturation = blackoilState->saturation();
     for (size_t cellIdx = 0; cellIdx < numCells; ++cellIdx) {
         pressure[cellIdx] = timeStepIdx*1e5 + 1e4 + cellIdx;
     }
@@ -136,9 +122,8 @@ std::shared_ptr<Opm::BlackoilState> createBlackoilState(int timeStepIdx, std::sh
 }
 
 
-std::shared_ptr<Opm::EclipseWriter> createEclipseWriter(const char *deckString,
-                                                        std::shared_ptr<const Opm::Deck> deck,
-                                                        std::shared_ptr<Opm::SimulatorTimer> simulatorTimer,
+
+std::shared_ptr<Opm::EclipseWriter> createEclipseWriter(std::shared_ptr<const Opm::Deck> deck,
                                                         std::shared_ptr<Opm::EclipseState> eclipseState,
                                                         std::shared_ptr<Opm::GridManager> ourFineGridManagerPtr,
                                                         const int * compressedToCartesianCellIdx)
@@ -146,25 +131,9 @@ std::shared_ptr<Opm::EclipseWriter> createEclipseWriter(const char *deckString,
     Opm::parameter::ParameterGroup params;
     params.insertParameter("deck_filename", "testcase.data");
 
-    auto eclGrid = eclipseState->getEclipseGrid();
-    BOOST_CHECK(eclGrid->getNX() == 10);
-    BOOST_CHECK(eclGrid->getNY() == 10);
-    BOOST_CHECK(eclGrid->getNZ() == 10);
-    BOOST_CHECK(eclGrid->getCartesianSize() == 10*10*10);
-
-    const UnstructuredGrid &ourFinerUnstructuredGrid = *ourFineGridManagerPtr->c_grid();
-    BOOST_CHECK(ourFinerUnstructuredGrid.cartdims[0] == 10);
-    BOOST_CHECK(ourFinerUnstructuredGrid.cartdims[1] == 10);
-    BOOST_CHECK(ourFinerUnstructuredGrid.cartdims[2] == 10);
-
-    BOOST_CHECK(ourFinerUnstructuredGrid.number_of_cells == 10*10*10);
-
     Opm::PhaseUsage phaseUsage = Opm::phaseUsageFromDeck(deck);
 
-    phaseUsage.phase_used[Opm::BlackoilPhases::Aqua] = 1;
-    phaseUsage.phase_used[Opm::BlackoilPhases::Liquid] = 1;
-    phaseUsage.phase_used[Opm::BlackoilPhases::Vapour] = 1;
-
+    const UnstructuredGrid &ourFinerUnstructuredGrid = *ourFineGridManagerPtr->c_grid();
 
     std::shared_ptr<Opm::EclipseWriter> eclipseWriter = std::make_shared<Opm::EclipseWriter>(params,
                                                                                              eclipseState,
@@ -172,13 +141,9 @@ std::shared_ptr<Opm::EclipseWriter> createEclipseWriter(const char *deckString,
                                                                                              ourFinerUnstructuredGrid.number_of_cells,
                                                                                              compressedToCartesianCellIdx);
 
-
-    int numCells = ourFinerUnstructuredGrid.number_of_cells;
-    for (int cellIdx = 0; cellIdx < numCells; ++cellIdx)
-        BOOST_CHECK(ourFinerUnstructuredGrid.global_cell[cellIdx] == cellIdx);
-
     return eclipseWriter;
 }
+
 
 
 
@@ -241,19 +206,14 @@ BOOST_AUTO_TEST_CASE(test_EclipseWriterRFTHandler)
     std::shared_ptr<const Opm::Deck>   deck         = createDeck(deckString);
     std::shared_ptr<Opm::EclipseState> eclipseState = std::make_shared<Opm::EclipseState>(deck);
 
-    auto eclGrid = eclipseState->getEclipseGrid();
-    Opm::EclipseGridConstPtr constEclGrid(eclGrid);
-    std::shared_ptr<Opm::GridManager> ourFineGridManagerPtr = std::make_shared<Opm::GridManager>(constEclGrid);
-
     std::shared_ptr<Opm::SimulatorTimer> simulatorTimer = std::make_shared<Opm::SimulatorTimer>();
     simulatorTimer->init(eclipseState->getSchedule()->getTimeMap());
 
-
+    std::shared_ptr<Opm::GridManager>  ourFineGridManagerPtr = std::make_shared<Opm::GridManager>(eclipseState->getEclipseGrid());
     const UnstructuredGrid &ourFinerUnstructuredGrid = *ourFineGridManagerPtr->c_grid();
     const int* compressedToCartesianCellIdx = Opm::UgGridHelpers::globalCell(ourFinerUnstructuredGrid);
-    std::shared_ptr<Opm::EclipseWriter> eclipseWriter = createEclipseWriter(deckString.c_str(),
-                                                                            deck,
-                                                                            simulatorTimer,
+
+    std::shared_ptr<Opm::EclipseWriter> eclipseWriter = createEclipseWriter(deck,
                                                                             eclipseState,
                                                                             ourFineGridManagerPtr,
                                                                             compressedToCartesianCellIdx);
