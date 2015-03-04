@@ -29,6 +29,7 @@
 #include <opm/core/simulator/SimulatorState.hpp>
 #include <opm/core/simulator/SimulatorTimerInterface.hpp>
 #include <opm/core/simulator/WellState.hpp>
+#include <opm/core/io/eclipse/EclipseWriteRFTHandler.hpp>
 #include <opm/core/utility/ErrorMacros.hpp>
 #include <opm/core/utility/parameters/Parameter.hpp>
 #include <opm/core/utility/parameters/ParameterGroup.hpp>
@@ -1115,27 +1116,57 @@ void EclipseWriter::writeTimeStep(const SimulatorTimerInterface& timer,
     // Also, we want to use the same units as the deck for pressure output, i.e. we have
     // to mutliate our nice SI pressures by the inverse of the conversion factor of deck
     // to SI pressure units...
-    std::vector<double> tmp = reservoirState.pressure();
-    EclipseWriterDetails::convertFromSiTo(tmp, deckToSiPressure_);
-    EclipseWriterDetails::restrictAndReorderToActiveCells(tmp, gridToEclipseIdx_.size(), gridToEclipseIdx_.data());
+    std::vector<double> pressure = reservoirState.pressure();
+    EclipseWriterDetails::convertFromSiTo(pressure, deckToSiPressure_);
+    EclipseWriterDetails::restrictAndReorderToActiveCells(pressure, gridToEclipseIdx_.size(), gridToEclipseIdx_.data());
 
-    sol.add(EclipseWriterDetails::Keyword<float>("PRESSURE", tmp));
+    sol.add(EclipseWriterDetails::Keyword<float>("PRESSURE", pressure));
 
-    for (int phase = 0; phase != BlackoilPhases::MaxNumPhases; ++phase) {
-        // Eclipse never writes the oil saturation, so all post-processors
-        // must calculate this from the other saturations anyway
-        if (phase == BlackoilPhases::PhaseIndex::Liquid) {
-            continue;
-        }
-        if (phaseUsage_.phase_used[phase]) {
-            tmp = reservoirState.saturation();
-            EclipseWriterDetails::extractFromStripedData(tmp,
-                                                         /*offset=*/phaseUsage_.phase_pos[phase],
-                                                         /*stride=*/phaseUsage_.num_phases);
-            EclipseWriterDetails::restrictAndReorderToActiveCells(tmp, gridToEclipseIdx_.size(), gridToEclipseIdx_.data());
-            sol.add(EclipseWriterDetails::Keyword<float>(EclipseWriterDetails::saturationKeywordNames[phase], tmp));
-        }
+    std::vector<double> saturation_water;
+    std::vector<double> saturation_gas;
+
+
+    if (phaseUsage_.phase_used[BlackoilPhases::Aqua]) {
+        saturation_water = reservoirState.saturation();
+        EclipseWriterDetails::extractFromStripedData(saturation_water,
+                                                     /*offset=*/phaseUsage_.phase_pos[BlackoilPhases::Aqua],
+                                                     /*stride=*/phaseUsage_.num_phases);
+        EclipseWriterDetails::restrictAndReorderToActiveCells(saturation_water, gridToEclipseIdx_.size(), gridToEclipseIdx_.data());
+        sol.add(EclipseWriterDetails::Keyword<float>(EclipseWriterDetails::saturationKeywordNames[BlackoilPhases::PhaseIndex::Aqua], saturation_water));
     }
+
+
+    if (phaseUsage_.phase_used[BlackoilPhases::Vapour]) {
+        saturation_gas = reservoirState.saturation();
+        EclipseWriterDetails::extractFromStripedData(saturation_gas,
+                                                     /*offset=*/phaseUsage_.phase_pos[BlackoilPhases::Vapour],
+                                                     /*stride=*/phaseUsage_.num_phases);
+        EclipseWriterDetails::restrictAndReorderToActiveCells(saturation_gas, gridToEclipseIdx_.size(), gridToEclipseIdx_.data());
+        sol.add(EclipseWriterDetails::Keyword<float>(EclipseWriterDetails::saturationKeywordNames[BlackoilPhases::PhaseIndex::Vapour], saturation_gas));
+    }
+
+
+
+    //Write RFT data for current timestep to RFT file
+    const char * rft_filename = ecl_util_alloc_filename(outputDir_.c_str(),
+                                                        baseName_.c_str(),
+                                                        ECL_RFT_FILE,
+                                                        false,
+                                                        writeStepIdx_);
+
+
+    std::vector<WellConstPtr> wells = eclipseState_->getSchedule()->getWells(timer.currentStepNum());
+
+    EclipseWriterDetails::EclipseWriteRFTHandler::writeTimeStep(rft_filename,
+                                                                timer,
+                                                                wells,
+                                                                eclipseState_->getEclipseGrid(),
+                                                                numCells_,
+                                                                compressedToCartesianCellIdx_,
+                                                                pressure,
+                                                                saturation_water,
+                                                                saturation_gas);
+
 
 
     /* Summary variables (well reporting) */
