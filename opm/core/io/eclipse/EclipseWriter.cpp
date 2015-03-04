@@ -998,6 +998,32 @@ int EclipseWriter::eclipseWellStatusMask(WellCommon::StatusEnum wellStatus)
 }
 
 
+
+/**
+ * Convert opm-core UnitType to eclipse format: ert_ecl_unit_enum
+ */
+ert_ecl_unit_enum EclipseWriter::eclipseUnitTypeMask(UnitSystem::UnitType unit)
+{
+    ert_ecl_unit_enum ecl_type;
+    switch (unit) {
+      case(UnitSystem::UNIT_TYPE_METRIC):
+          ecl_type = ERT_ECL_METRIC_UNITS;
+          break;
+      case(UnitSystem::UNIT_TYPE_FIELD)          :
+          ecl_type = ERT_ECL_FIELD_UNITS;
+          break;
+      case(UnitSystem::UNIT_TYPE_LAB):
+          ecl_type = ERT_ECL_LAB_UNITS;
+          break;
+      default:
+        //what to do ?
+        break;
+    };
+
+    return ecl_type;
+}
+
+
 void EclipseWriter::writeInit(const SimulatorTimerInterface &timer)
 {
     // if we don't want to write anything, this method becomes a
@@ -1148,24 +1174,32 @@ void EclipseWriter::writeTimeStep(const SimulatorTimerInterface& timer,
 
 
     //Write RFT data for current timestep to RFT file
-    const char * rft_filename = ecl_util_alloc_filename(outputDir_.c_str(),
-                                                        baseName_.c_str(),
-                                                        ECL_RFT_FILE,
-                                                        false,
-                                                        writeStepIdx_);
+    std::shared_ptr<EclipseWriterDetails::EclipseWriteRFTHandler> eclipseWriteRFTHandler = std::make_shared<EclipseWriterDetails::EclipseWriteRFTHandler>(
+                                                                                                                      compressedToCartesianCellIdx_,
+                                                                                                                      numCells_,
+                                                                                                                      eclipseState_->getEclipseGrid()->getCartesianSize());
 
+
+    char * rft_filename = ecl_util_alloc_filename(outputDir_.c_str(),
+                                                  baseName_.c_str(),
+                                                  ECL_RFT_FILE,
+                                                  false,
+                                                  0);
+
+    std::shared_ptr<const UnitSystem> unitsystem = eclipseState_->getDeckUnitSystem();
+    ert_ecl_unit_enum ecl_unit = eclipseUnitTypeMask(unitsystem->getType());
 
     std::vector<WellConstPtr> wells = eclipseState_->getSchedule()->getWells(timer.currentStepNum());
 
-    EclipseWriterDetails::EclipseWriteRFTHandler::writeTimeStep(rft_filename,
-                                                                timer,
-                                                                wells,
-                                                                eclipseState_->getEclipseGrid(),
-                                                                numCells_,
-                                                                compressedToCartesianCellIdx_,
-                                                                pressure,
-                                                                saturation_water,
-                                                                saturation_gas);
+
+    eclipseWriteRFTHandler->writeTimeStep(rft_filename,
+                                          ecl_unit,
+                                          timer,
+                                          wells,
+                                          eclipseState_->getEclipseGrid(),
+                                          pressure,
+                                          saturation_water,
+                                          saturation_gas);
 
 
 

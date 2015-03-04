@@ -38,17 +38,19 @@
 #include <ert/ecl/ecl_rft_file.h>
 
 
+
 namespace Opm {
 namespace EclipseWriterDetails {
 
-    EclipseWriteRFTHandler::EclipseWriteRFTHandler() {}
+    EclipseWriteRFTHandler::EclipseWriteRFTHandler(const int * compressedToCartesianCellIdx, size_t numCells, size_t cartesianSize) {
+        initGlobalToActiveIndex(compressedToCartesianCellIdx, numCells, cartesianSize);
+    }
 
     void EclipseWriteRFTHandler::writeTimeStep(const std::string& filename,
+                                               const ert_ecl_unit_enum ecl_unit,
                                                const SimulatorTimerInterface& simulatorTimer,
                                                std::vector<WellConstPtr>& wells,
                                                EclipseGridConstPtr eclipseGrid,
-                                               size_t numCells,
-                                               const int * compressedToCartesianCellIdx,
                                                std::vector<double>& pressure,
                                                std::vector<double>& swat,
                                                std::vector<double>& sgas) {
@@ -62,8 +64,6 @@ namespace EclipseWriterDetails {
                 ecl_rft_node_type * ecl_node = createEclRFTNode(well,
                                                                  simulatorTimer,
                                                                  eclipseGrid,
-                                                                 numCells,
-                                                                 compressedToCartesianCellIdx,
                                                                  pressure,
                                                                  swat,
                                                                  sgas);
@@ -78,7 +78,7 @@ namespace EclipseWriterDetails {
 
 
         if (rft_nodes.size() > 0) {
-            ecl_rft_file_update(filename.c_str(), rft_nodes.data(), rft_nodes.size(), ERT_ECL_METRIC_UNITS);
+            ecl_rft_file_update(filename.c_str(), rft_nodes.data(), rft_nodes.size(), ecl_unit);
         }
     }
 
@@ -88,8 +88,6 @@ namespace EclipseWriterDetails {
     ecl_rft_node_type * EclipseWriteRFTHandler::createEclRFTNode(WellConstPtr well,
                                                                   const SimulatorTimerInterface& simulatorTimer,
                                                                   EclipseGridConstPtr eclipseGrid,
-                                                                  size_t numCells,
-                                                                  const int * compressedToCartesianCellIdx,
                                                                   const std::vector<double>& pressure,
                                                                   const std::vector<double>& swat,
                                                                   const std::vector<double>& sgas) {
@@ -99,8 +97,6 @@ namespace EclipseWriterDetails {
         size_t             timestep       = (size_t)simulatorTimer.currentStepNum();
         time_t             recording_date = simulatorTimer.currentPosixTime();
         double             days           = Opm::unit::convert::to(simulatorTimer.simulationTimeElapsed(), Opm::unit::day);
-
-        std::vector<int> globalToActiveIndex = getGlobalToActiveIndex(compressedToCartesianCellIdx, numCells, eclipseGrid->getCartesianSize());
 
         std::string type = "RFT";
         ecl_rft_node_type * ecl_rft_node = ecl_rft_node_alloc_new(well_name.c_str(), type.c_str(), recording_date, days);
@@ -113,7 +109,7 @@ namespace EclipseWriterDetails {
             size_t k = (size_t)completion->getK();
 
             size_t global_index = eclipseGrid->getGlobalIndex(i,j,k);
-            int active_index = globalToActiveIndex[global_index];
+            int active_index = globalToActiveIndex_[global_index];
 
             if (active_index > -1) {
                 double depth = eclipseGrid->getCellDepth(i,j,k);
@@ -130,15 +126,15 @@ namespace EclipseWriterDetails {
     }
 
 
-    std::vector<int> EclipseWriteRFTHandler::getGlobalToActiveIndex(const int* compressedToCartesianCellIdx, size_t activeSize, size_t cartesianSize) {
-        std::vector<int> globalToActiveIndex(cartesianSize, -1);
-        for (int active_index = 0; active_index < activeSize; ++active_index) {
-            int global_index = compressedToCartesianCellIdx[active_index];
-            globalToActiveIndex[global_index] = active_index;
+    void EclipseWriteRFTHandler::initGlobalToActiveIndex(const int * compressedToCartesianCellIdx, size_t numCells, size_t cartesianSize) {
+        globalToActiveIndex_.resize(cartesianSize, -1);
+        for (int active_index = 0; active_index < numCells; ++active_index) {
+            //If compressedToCartesianCellIdx, assume no compressed to cartesian mapping, set global equal to active index
+            int global_index = (NULL != compressedToCartesianCellIdx) ? compressedToCartesianCellIdx[active_index] : active_index;
+            globalToActiveIndex_[global_index] = active_index;
         }
-
-        return globalToActiveIndex;
     }
+
 
 }//namespace EclipseWriterDetails
 }//namespace Opm

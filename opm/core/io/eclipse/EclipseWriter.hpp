@@ -103,6 +103,7 @@ public:
 
     static int eclipseWellTypeMask(WellType wellType, WellInjector::TypeEnum injectorType);
     static int eclipseWellStatusMask(WellCommon::StatusEnum wellStatus);
+    static ert_ecl_unit_enum eclipseUnitTypeMask(UnitSystem::UnitType unit);
 
 private:
     Opm::EclipseStateConstPtr eclipseState_;

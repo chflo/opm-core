@@ -27,6 +27,7 @@
 #include <opm/parser/eclipse/EclipseState/EclipseState.hpp>
 
 #include <ert/ecl/ecl_rft_node.h>
+#include <ert/ecl/ecl_util.h>
 
 
 namespace Opm {
@@ -36,33 +37,32 @@ namespace EclipseWriterDetails {
     class EclipseWriteRFTHandler {
 
     public:
-    EclipseWriteRFTHandler();
+    EclipseWriteRFTHandler(const int * compressedToCartesianCellIdx, size_t numCells, size_t cartesianSize);
 
 
-    static void writeTimeStep(const std::string& filename,
-                              const SimulatorTimerInterface& simulatorTimer,
-                              std::vector<WellConstPtr>& wells,
-                              EclipseGridConstPtr eclipseGrid,
-                              size_t numCells,
-                              const int * compressedToCartesianCellIdx,
-                              std::vector<double>& pressure,
-                              std::vector<double>& swat,
-                              std::vector<double>& sgas);
+    void writeTimeStep(const std::string& filename,
+                       const ert_ecl_unit_enum ecl_unit,
+                       const SimulatorTimerInterface& simulatorTimer,
+                       std::vector<WellConstPtr>& wells,
+                       EclipseGridConstPtr eclipseGrid,
+                       std::vector<double>& pressure,
+                       std::vector<double>& swat,
+                       std::vector<double>& sgas);
 
 
 
     private:
 
-    static ecl_rft_node_type * createEclRFTNode(WellConstPtr well,
-                                                 const SimulatorTimerInterface& simulatorTimer,
-                                                 EclipseGridConstPtr eclipseGrid,
-                                                 size_t numCells,
-                                                 const int * compressedToCartesianCellIdx,
-                                                 const std::vector<double>& pressure,
-                                                 const std::vector<double>& swat,
-                                                 const std::vector<double>& sgas);
+    ecl_rft_node_type * createEclRFTNode(WellConstPtr well,
+                                         const SimulatorTimerInterface& simulatorTimer,
+                                         EclipseGridConstPtr eclipseGrid,
+                                         const std::vector<double>& pressure,
+                                         const std::vector<double>& swat,
+                                         const std::vector<double>& sgas);
 
-    static std::vector<int> getGlobalToActiveIndex(const int * compressedToCartesianCellIdx, size_t activeSize, size_t cartesianSize);
+    void initGlobalToActiveIndex(const int * compressedToCartesianCellIdx, size_t numCells, size_t cartesianSize);
+
+    std::vector<int> globalToActiveIndex_;
 
     };
 
