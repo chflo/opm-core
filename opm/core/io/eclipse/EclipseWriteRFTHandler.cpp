@@ -129,7 +129,7 @@ namespace EclipseWriterDetails {
     void EclipseWriteRFTHandler::initGlobalToActiveIndex(const int * compressedToCartesianCellIdx, size_t numCells, size_t cartesianSize) {
         globalToActiveIndex_.resize(cartesianSize, -1);
         for (int active_index = 0; active_index < numCells; ++active_index) {
-            //If compressedToCartesianCellIdx, assume no compressed to cartesian mapping, set global equal to active index
+            //If compressedToCartesianCellIdx is NULL, assume no compressed to cartesian mapping, set global equal to active index
             int global_index = (NULL != compressedToCartesianCellIdx) ? compressedToCartesianCellIdx[active_index] : active_index;
             globalToActiveIndex_[global_index] = active_index;
         }

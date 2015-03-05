@@ -1002,7 +1002,7 @@ int EclipseWriter::eclipseWellStatusMask(WellCommon::StatusEnum wellStatus)
 /**
  * Convert opm-core UnitType to eclipse format: ert_ecl_unit_enum
  */
-ert_ecl_unit_enum EclipseWriter::eclipseUnitTypeMask(UnitSystem::UnitType unit)
+ert_ecl_unit_enum EclipseWriter::convertUnitTypeErtEclUnitEnum(UnitSystem::UnitType unit)
 {
     ert_ecl_unit_enum ecl_type;
     switch (unit) {
@@ -1016,8 +1016,7 @@ ert_ecl_unit_enum EclipseWriter::eclipseUnitTypeMask(UnitSystem::UnitType unit)
           ecl_type = ERT_ECL_LAB_UNITS;
           break;
       default:
-        //what to do ?
-        break;
+          break;
     };
 
     return ecl_type;
@@ -1187,7 +1186,7 @@ void EclipseWriter::writeTimeStep(const SimulatorTimerInterface& timer,
                                                   0);
 
     std::shared_ptr<const UnitSystem> unitsystem = eclipseState_->getDeckUnitSystem();
-    ert_ecl_unit_enum ecl_unit = eclipseUnitTypeMask(unitsystem->getType());
+    ert_ecl_unit_enum ecl_unit = convertUnitTypeErtEclUnitEnum(unitsystem->getType());
 
     std::vector<WellConstPtr> wells = eclipseState_->getSchedule()->getWells(timer.currentStepNum());
 
