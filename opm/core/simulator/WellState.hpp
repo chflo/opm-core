@@ -22,12 +22,31 @@
 
 #include <opm/core/wells.h>
 #include <opm/core/well_controls.h>
+#include <opm/parser/eclipse/EclipseState/EclipseState.hpp>
 #include <vector>
 #include <cassert>
 #include <cstddef>
+#include <utility>
+#include <iostream>
+#include <string>
 
 namespace Opm
 {
+    ///
+    /// \brief The WellIndex struct
+    ///     wellNumber
+    ///         The index of the well as it occurs in the Schedule.OpenWells object.
+    ///     wellCompletionOffset
+    ///         Absolute offset, i.e. from the start, for the completions for the well.In effect, it is the index where this
+    ///         well's completions will start. Used for the perfrates_ and perfpress_ vectors.
+    ///     completionMap
+    ///         Offset relative to wellCompletionOffset, for this completion. Used for the perfrates_ and perfpress_ vectors.
+    struct WellIndex
+    {
+        size_t wellNumber;
+        size_t wellCompletionOffset;
+        std::map<std::size_t, size_t> completionMap;
+    };
 
     /// The state of a set of wells.
     class WellState
@@ -126,6 +145,82 @@ namespace Opm
             }
         }
 
+        ///
+        /// \brief resize
+        ///     This method resizes the vectors bhp_, temperature_, wellrates_, perfrates_ and perfpress,
+        ///     to the sizes requiered for the report step that is about to be simulated.The values that
+        ///     are already in these vectors, as a result of the previous report step that was simulated,
+        ///     are repositioned to their new indices - taking into account that both wells and completions
+        ///     can be both opened and closed.
+        /// \param state
+        ///     The EclipseState object.
+        /// \param reportStep
+        ///     The number of the report step that is about to be simulated.
+        void resize(const EclipseState& state, const size_t reportStep)
+        {
+            std::vector<WellPtr> wells = state.getSchedule()->getOpenWells(reportStep);
+            const size_t numPhases = state.getNumPhases();
+            const int numCompl = getNumCompletions(wells, reportStep);
+
+            const size_t numWells = wells.size();
+
+            const std::vector<double> bhpOld = bhp_;
+            const std::vector<double> temperatureOld = temperature_;
+            const std::vector<double> wellRatesOld = wellrates_;
+            const std::vector<double> perfratesOld = perfrates_;
+            const std::vector<double> perfpressOld = perfpress_;
+
+            std::map<std::string, WellIndex> newMap = createWellIndexMap(state, wells, reportStep);
+
+            const double default_temp = 273.15 + 20.0;
+            const double default_perfpress = -1e100;
+            const double default_rates = 0.0;
+
+            bhp_.resize(numWells);
+            temperature_.resize(numWells, default_temp);
+            wellrates_.resize(numWells * numPhases, default_rates);
+            perfrates_.resize(numCompl, default_rates);
+            perfpress_.resize(numCompl, default_perfpress);
+
+            for (auto oldIter = wellIndexMap_.begin(); oldIter != wellIndexMap_.end(); ++oldIter) {
+                const std::string& wellName = (*oldIter).first;
+                auto newIter = newMap.find(wellName);
+
+                if (newIter != newMap.end()) {
+                    const WellIndex& oldWi = (*oldIter).second;
+                    const size_t oldIndex = oldWi.wellNumber;
+
+                    const WellIndex& newWi = (*newIter).second;
+                    const size_t newIndex = newWi.wellNumber;
+
+                    bhp_[newIndex] = bhpOld[oldIndex];
+                    temperature_[newIndex] = temperatureOld[oldIndex];
+
+                    for (int i = 0; i < numPhases; ++i) {
+                        wellrates_[newIndex * numPhases + i] = wellRatesOld[oldIndex * numPhases + i];
+                    }
+
+                    for (auto oldComplIter = oldWi.completionMap.begin(); oldComplIter != oldWi.completionMap.end(); ++oldComplIter) {
+                        size_t completionId = (*oldComplIter).first;
+                        auto newComplIter = newWi.completionMap.find(completionId);
+
+                        if (newComplIter != newWi.completionMap.end()) {
+                            const size_t oldComplIndex = (*oldComplIter).second;
+                            const size_t newComplIndex = (*newComplIter).second;
+
+                            const size_t oldWellCompletionOffset = oldWi.wellCompletionOffset;
+                            const size_t newWellCompletionOffset = newWi.wellCompletionOffset;
+
+                            perfrates_[newWellCompletionOffset + newComplIndex] = perfratesOld[oldWellCompletionOffset + oldComplIndex];
+                            perfpress_[newWellCompletionOffset + newComplIndex] = perfpressOld[oldWellCompletionOffset + oldComplIndex];
+                        }
+                    }
+                }
+            }
+
+            wellIndexMap_ = newMap;
+        }
+
         /// One bhp pressure per well.
         std::vector<double>& bhp() { return bhp_; }
         const std::vector<double>& bhp() const { return bhp_; }
@@ -177,6 +272,94 @@ namespace Opm
         std::vector<double> wellrates_;
         std::vector<double> perfrates_;
         std::vector<double> perfpress_;
+
+        ///
+        /// \brief wellIndexMap_
+        ///     This map is used in the resize method. It holds information between report steps.
+        std::map<std::string, WellIndex> wellIndexMap_;
+
+        int getWellMapIndex(const std::string wellName) const
+        {
+            int retVal = -1;
+            auto iter = wellIndexMap_.find(wellName);
+
+            if (iter != wellIndexMap_.end()) {
+                const WellIndex& wi = (*iter).second;
+                retVal = wi.wellNumber;
+            }
+
+            return retVal;
+        }
+
+        int getNumCompletions(const std::vector<WellPtr>& wells, const int reportStep) const
+        {
+            int numCompl = 0;
+
+            for (size_t i = 0; i < wells.size(); ++i) {
+                int numComplForWell = getNumCompletions(wells[i], reportStep);
+                numCompl += numComplForWell;
+            }
+
+            return numCompl;
+        }
+
+        int getNumCompletions(const WellPtr& well, const int reportStep) const
+        {
+            int numComplForWell = 0;
+            CompletionSetConstPtr complSet = well->getCompletions(reportStep);
+
+            for (size_t i = 0; i < complSet->size(); ++i) {
+                WellCompletion::StateEnum complState = complSet->get(i)->getState();
+
+                if (complState == WellCompletion::StateEnum::OPEN) {
+                    numComplForWell++;
+                }
+            }
+
+            return numComplForWell;
+        }   
+
+        std::map<std::string, WellIndex> createWellIndexMap(const EclipseState& state, const std::vector<WellPtr>& wells, const int reportStep)
+        {
+            EclipseGridConstPtr grid = state.getEclipseGrid();
+            size_t numWells = wells.size();
+            std::map<std::string, WellIndex> newMap;
+
+            size_t totalWellCompletionOffset = 0;
+            for (size_t i = 0; i < numWells; ++i) {
+                WellIndex wi;
+                wi.wellNumber = i;
+                wi.wellCompletionOffset = totalWellCompletionOffset;
+
+                totalWellCompletionOffset += getNumCompletions(wells[i], reportStep);
+                fillCompletionsMap(grid, wells[i], wi, reportStep);
+                std::pair <std::string, WellIndex> p(wells[i]->name(), wi);
+                newMap.insert(p);
+            }
+
+            return newMap;
+        }
+
+        void fillCompletionsMap(const EclipseGridConstPtr& grid, const WellPtr& well, WellIndex& wi, const int reportStep) const
+        {
+            CompletionSetConstPtr complSet = well->getCompletions(reportStep);
+            size_t open_completions_count = 0;
+
+            for (size_t idx = 0; idx < complSet->size(); ++idx) {
+                CompletionConstPtr completion = complSet->get(idx);
+
+                if (completion->getState() == WellCompletion::StateEnum::OPEN) {
+                    int i = completion->getI();
+                    int j = completion->getJ();
+                    int k = completion->getK();
+
+                    size_t globalIndex = grid->getGlobalIndex(i, j, k);
+                    std::pair <size_t, size_t> p(globalIndex, open_completions_count);
+                    wi.completionMap.insert(p);
+                    ++open_completions_count;
+                }
+            }
+        }
     };
 
 } // namespace Opm
