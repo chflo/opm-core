@@ -198,6 +198,7 @@ list (APPEND TEST_SOURCE_FILES
 	tests/test_gridutilities.cpp
 	tests/test_anisotropiceikonal.cpp
 	tests/test_stoppedwells.cpp
+        tests/test_wellStateResize.cpp
   )
 
 # originally generated with the command:
