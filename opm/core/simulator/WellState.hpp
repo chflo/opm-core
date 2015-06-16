@@ -332,7 +332,7 @@ namespace Opm
                 wi.wellCompletionOffset = totalWellCompletionOffset;
 
                 totalWellCompletionOffset += getNumCompletions(wells[i], reportStep);
-                fillCompletionsMap(grid, wells[i], wi, reportStep);
+                fillCompletionsMap(grid, wells[i], reportStep, wi);
                 std::pair <std::string, WellIndex> p(wells[i]->name(), wi);
                 newMap.insert(p);
             }
@@ -340,7 +340,7 @@ namespace Opm
             return newMap;
         }
 
-        void fillCompletionsMap(const EclipseGridConstPtr& grid, const WellPtr& well, WellIndex& wi, const int reportStep) const
+        void fillCompletionsMap(const EclipseGridConstPtr& grid, const WellPtr& well, const int reportStep, WellIndex& wi) const
         {
             CompletionSetConstPtr complSet = well->getCompletions(reportStep);
             size_t open_completions_count = 0;
